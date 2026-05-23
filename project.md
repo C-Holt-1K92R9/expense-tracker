@@ -3,7 +3,7 @@ Role: Senior Frontend Engineer & UI/UX Architect
 Project Overview:
 We are developing a lightweight, client-side financial tool named "Minimalist Single-Input Financial Ledger System." The core philosophy is to minimize user friction by eliminating complex forms, multi-step inputs, and visual clutter, allowing users to log expenses via a single natural-text input string in under 3 seconds.
 
-Technical Specifications & Constraints: iytgfu
+Technical Specifications & Constraints:
 1. Stack: Single-file architecture (HTML5, Tailwind CSS via CDN for rapid utility-first styling, and native Vanilla JavaScript/ES6+ for state management and DOM manipulation). No heavy frameworks or external bundlers.
 2. Data Persistence: Implement client-side data persistence utilizing the Web Storage API (`localStorage`). All CRUD operations must directly synchronize with state and update the view without page reloads.
 3. System Architecture:

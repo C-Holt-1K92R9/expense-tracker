@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimalist Financial Ledger</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-50 to-slate-100 min-h-screen py-8 px-4">
+    <div class="max-w-2xl mx-auto">
+        <!-- Header -->
+        <div class="text-center mb-12">
+            <h1 class="text-4xl font-bold text-slate-900 mb-2">Financial Ledger</h1>
+            <p class="text-slate-500">Track expenses in seconds</p>
+        </div>
+
+        <!-- Hero Metric -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8">
+            <p class="text-slate-500 text-sm font-medium tracking-wide mb-2">MONTHLY EXPENDITURE</p>
+            <h2 id="monthlyTotal" class="text-5xl font-bold text-slate-900">$0.00</h2>
+            <p id="periodInfo" class="text-slate-400 text-sm mt-2"></p>
+        </div>
+
+        <!-- Smart Input -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8">
+            <label for="expenseInput" class="block text-sm font-medium text-slate-700 mb-3">
+                Log an expense
+            </label>
+            <input
+                id="expenseInput"
+                type="text"
+                placeholder="e.g., 50 Lunch or Dinner 75"
+                class="w-full px-4 py-3 text-lg border-2 border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900 focus:ring-opacity-10 transition-all"
+                autofocus
+            />
+            <p id="inputError" class="text-red-500 text-sm mt-2 hidden"></p>
+            <p class="text-slate-400 text-xs mt-3">
+                Format: <span class="font-mono text-slate-600">amount description</span> or <span class="font-mono text-slate-600">description amount</span>
+            </p>
+        </div>
+
+        <!-- Ledger View -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+                <h3 class="text-lg font-semibold text-slate-900">Recent Transactions</h3>
+            </div>
+            <div id="ledgerContainer" class="divide-y divide-slate-200">
+                <div class="px-6 py-8 text-center text-slate-400">
+                    No transactions yet. Add one to get started.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== State Management ====================
+        const STORAGE_KEY = 'financial_ledger_expenses';
+        const CURRENT_MONTH_KEY = 'financial_ledger_month';
+
+        class ExpenseManager {
+            constructor() {
+                this.expenses = this.loadFromStorage();
+                this.validateMonthReset();
+            }
+
+            loadFromStorage() {
+                try {
+                    const stored = localStorage.getItem(STORAGE_KEY);
+                    return stored ? JSON.parse(stored) : [];
+                } catch (error) {
+                    console.error('Failed to load expenses from storage:', error);
+                    return [];
+                }
+            }
+
+            saveToStorage() {
+                try {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.expenses));
+                } catch (error) {
+                    console.error('Failed to save expenses to storage:', error);
+                }
+            }
+
+            validateMonthReset() {
+                const currentMonth = new Date().toISOString().slice(0, 7);
+                const storedMonth = localStorage.getItem(CURRENT_MONTH_KEY);
+                
+                if (storedMonth !== currentMonth) {
+                    localStorage.setItem(CURRENT_MONTH_KEY, currentMonth);
+                }
+            }
+
+            addExpense(amount, description) {
+                const expense = {
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                    amount: parseFloat(amount),
+                    description: description.trim(),
+                    timestamp: new Date().toISOString()
+                };
+                this.expenses.unshift(expense);
+                this.saveToStorage();
+                return expense;
+            }
+
+            deleteExpense(id) {
+                this.expenses = this.expenses.filter(exp => exp.id !== id);
+                this.saveToStorage();
+            }
+
+            getMonthlyTotal() {
+                const now = new Date();
+                const currentYear = now.getFullYear();
+                const currentMonth = now.getMonth();
+
+                return this.expenses
+                    .filter(exp => {
+                        const expDate = new Date(exp.timestamp);
+                        return expDate.getFullYear() === currentYear && 
+                               expDate.getMonth() === currentMonth;
+                    })
+                    .reduce((sum, exp) => sum + exp.amount, 0);
+            }
+
+            getAllExpenses() {
+                return this.expenses;
+            }
+        }
+
+        // ==================== Parser Engine ====================
+        class ExpenseParser {
+            static parse(input) {
+                const trimmed = input.trim();
+                if (!trimmed) {
+                    return { valid: false, error: 'Input cannot be empty.' };
+                }
+
+                // Regex pattern to match:
+                // Case A: [number] [text] - "500 Food"
+                // Case B: [text] [number] - "Coffee 120"
+                const numberPattern = /^(-?\d+(?:\.\d{1,2})?)\s+(.+)$|^(.+?)\s+(-?\d+(?:\.\d{1,2})?)$/;
+                
+                const match = trimmed.match(numberPattern);
+                
+                if (!match) {
+                    return { 
+                        valid: false, 
+                        error: 'Invalid format. Please provide an amount and description.' 
+                    };
+                }
+
+                // Extract amount and description based on which groups matched
+                let amount, description;
+
+                if (match[1] !== undefined) {
+                    // Case A: number first
+                    amount = match[1];
+                    description = match[2];
+                } else {
+                    // Case B: text first
+                    description = match[3];
+                    amount = match[4];
+                }
+
+                // Validate amount
+                const parsedAmount = parseFloat(amount);
+                if (isNaN(parsedAmount) || parsedAmount <= 0) {
+                    return { 
+                        valid: false, 
+                        error: 'Amount must be a positive number.' 
+                    };
+                }
+
+                // Validate description
+                if (!description || description.trim().length === 0) {
+                    return { 
+                        valid: false, 
+                        error: 'Description cannot be empty.' 
+                    };
+                }
+
+                return {
+                    valid: true,
+                    amount: parsedAmount,
+                    description: description.trim()
+                };
+            }
+        }
+
+        // ==================== UI Controller ====================
+        class UIController {
+            constructor(manager) {
+                this.manager = manager;
+                this.inputElement = document.getElementById('expenseInput');
+                this.errorElement = document.getElementById('inputError');
+                this.ledgerContainer = document.getElementById('ledgerContainer');
+                this.monthlyTotalElement = document.getElementById('monthlyTotal');
+                this.periodInfoElement = document.getElementById('periodInfo');
+
+                this.setupEventListeners();
+                this.render();
+            }
+
+            setupEventListeners() {
+                this.inputElement.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        this.handleExpenseSubmit();
+                    }
+                });
+            }
+
+            handleExpenseSubmit() {
+                const input = this.inputElement.value;
+                this.clearError();
+
+                const parseResult = ExpenseParser.parse(input);
+
+                if (!parseResult.valid) {
+                    this.showError(parseResult.error);
+                    return;
+                }
+
+                this.manager.addExpense(parseResult.amount, parseResult.description);
+                this.inputElement.value = '';
+                this.render();
+            }
+
+            showError(message) {
+                this.errorElement.textContent = message;
+                this.errorElement.classList.remove('hidden');
+            }
+
+            clearError() {
+                this.errorElement.classList.add('hidden');
+                this.errorElement.textContent = '';
+            }
+
+            formatCurrency(amount) {
+                return new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: 'USD'
+                }).format(amount);
+            }
+
+            formatDate(isoString) {
+                const date = new Date(isoString);
+                const now = new Date();
+                const diffMs = now - date;
+                const diffMins = Math.floor(diffMs / 60000);
+                const diffHours = Math.floor(diffMs / 3600000);
+                const diffDays = Math.floor(diffMs / 86400000);
+
+                if (diffMins < 1) {
+                    return 'Just now';
+                } else if (diffMins < 60) {
+                    return `${diffMins}m ago`;
+                } else if (diffHours < 24) {
+                    return `${diffHours}h ago`;
+                } else if (diffDays === 1) {
+                    return 'Yesterday';
+                } else if (diffDays < 7) {
+                    return `${diffDays}d ago`;
+                } else {
+                    return date.toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric'
+                    });
+                }
+            }
+
+            renderLedger() {
+                const expenses = this.manager.getAllExpenses();
+
+                if (expenses.length === 0) {
+                    this.ledgerContainer.innerHTML = `
+                        <div class="px-6 py-8 text-center text-slate-400">
+                            No transactions yet. Add one to get started.
+                        </div>
+                    `;
+                    return;
+                }
+
+                this.ledgerContainer.innerHTML = expenses.map(exp => `
+                    <div class="px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors group">
+                        <div class="flex-1">
+                            <p class="text-slate-900 font-medium">${this.escapeHtml(exp.description)}</p>
+                            <p class="text-slate-400 text-sm">${this.formatDate(exp.timestamp)}</p>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <p class="text-slate-900 font-semibold text-lg">${this.formatCurrency(exp.amount)}</p>
+                            <button
+                                class="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                title="Delete expense"
+                                data-id="${exp.id}"
+                            >
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+
+                // Attach delete listeners
+                this.ledgerContainer.querySelectorAll('button[data-id]').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const id = btn.getAttribute('data-id');
+                        this.handleDeleteExpense(id);
+                    });
+                });
+            }
+
+            handleDeleteExpense(id) {
+                this.manager.deleteExpense(id);
+                this.render();
+            }
+
+            updateMetrics() {
+                const monthlyTotal = this.manager.getMonthlyTotal();
+                this.monthlyTotalElement.textContent = this.formatCurrency(monthlyTotal);
+
+                const now = new Date();
+                const monthName = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                this.periodInfoElement.textContent = monthName;
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            render() {
+                this.updateMetrics();
+                this.renderLedger();
+            }
+        }
+
+        // ==================== Initialize Application ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            const manager = new ExpenseManager();
+            const controller = new UIController(manager);
+        });
+    </script>
+</body>
+</html>
